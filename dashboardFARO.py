@@ -40,7 +40,7 @@ def get_short_names(unique_indicators: list) -> dict:
     if OpenAI is None:
         return cleaned_map
         
-    api_key = st.secrets["OPENROUTER_API_KEY"] Tu API Key
+    api_key = st.secrets["OPENROUTER_API_KEY"]
     if not api_key:
         return cleaned_map
 
