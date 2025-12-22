@@ -71,6 +71,7 @@ def get_short_names(unique_indicators: list) -> dict:
 # --- CONSTANTES Y RUTAS ---
 # CAMBIO: Usamos la url raw para que pandas descargue el binario directamente
 DATA_PATH = "https://github.com/Guallasamin/Dashboard_Faro/raw/main/Base%20de%20datos.xlsx"
+#DATA_PATH = '/Users/jonathanguallasamin/Desktop/Base de datos.xlsx'
 SHEET_NAME = "Totales"
 LOGO_PATH = "https://plataforma.grupofaro.org/pluginfile.php/1/theme_moove/logo/1759441070/logoFARO.png"
 
@@ -210,16 +211,46 @@ local_css()
 # --- FUNCIONES DE CARGA Y PROCESAMIENTO ---
 
 @st.cache_data(show_spinner=False)
-def load_data(path: str, sheet: str) -> pd.DataFrame:  # <--- CAMBIO: path ahora es str
-    # Pandas lee URLs directamente
-    df_raw = pd.read_excel(path, sheet_name=sheet)
+def load_data(path: str, sheet: str) -> pd.DataFrame:
+    # 1. Carga del Excel
+    # Usamos try/except para capturar errores de ruta comunes
+    try:
+        df_raw = pd.read_excel(path, sheet_name=sheet)
+    except FileNotFoundError:
+        st.error(f"❌ No se encontró el archivo en la ruta: {path}")
+        st.stop()
+    except Exception as e:
+        st.error(f"❌ Error al leer el Excel: {e}")
+        st.stop()
+
     header_row = df_raw.iloc[0]    
     df = df_raw.iloc[1:].copy()
-    df.rename(columns={"Unnamed: 1": "Desagregacion"}, inplace=True)
-    df["Indicador"] = df["Indicador"].ffill()
-    df["Desagregacion"] = df["Desagregacion"].fillna("Total").astype(str).str.strip()
-    df["Indicador"] = df["Indicador"].astype(str).str.strip()
+    
+    # 2. Detección Inteligente de la columna 'Desagregacion'
+    # Al insertar 'IndicadorSimplificado', la columna de desagregación se mueve.
+    # Aquí buscamos dónde cayó (generalmente Unnamed: 2 si hay columna nueva, o Unnamed: 1 si no).
+    if "Desagregacion" not in df.columns:
+        if "Unnamed: 2" in df.columns:
+            df.rename(columns={"Unnamed: 2": "Desagregacion"}, inplace=True)
+        elif "Unnamed: 1" in df.columns:
+            df.rename(columns={"Unnamed: 1": "Desagregacion"}, inplace=True)
+            
+    # Si por alguna razón sigue sin existir, creamos una por defecto para que no falle el código
+    if "Desagregacion" not in df.columns:
+        df["Desagregacion"] = "Total"
 
+    # 3. Limpieza y Propagación (FFill)
+    df["Indicador"] = df["Indicador"].ffill().astype(str).str.strip()
+    df["Desagregacion"] = df["Desagregacion"].fillna("Total").astype(str).str.strip()
+    
+    # Lectura de la nueva columna IndicadorSimplificado
+    if "IndicadorSimplificado" in df.columns:
+        df["IndicadorSimplificado"] = df["IndicadorSimplificado"].ffill().astype(str).str.strip()
+    else:
+        # Si no existe en el Excel, usamos el Indicador normal como respaldo
+        df["IndicadorSimplificado"] = df["Indicador"]
+
+    # 4. Transformación (Melting)
     tidy_frames = []
     cols = list(df_raw.columns)
     for year in range(2024, 2029):
@@ -230,26 +261,36 @@ def load_data(path: str, sheet: str) -> pd.DataFrame:  # <--- CAMBIO: path ahora
         year_cols = cols[start : start + 7]
         comp_names = header_row.iloc[start : start + 7].tolist()
         rename_map = {col: comp for col, comp in zip(year_cols, comp_names)}
-        temp = df[["Indicador", "Desagregacion"] + year_cols].rename(columns=rename_map)
+        
+        # Seleccionamos incluyendo IndicadorSimplificado
+        temp = df[["Indicador", "IndicadorSimplificado", "Desagregacion"] + year_cols].rename(columns=rename_map)
         temp["Año"] = year
+        
         tidy = temp.melt(
-            id_vars=["Indicador", "Desagregacion", "Año"],
+            id_vars=["Indicador", "IndicadorSimplificado", "Desagregacion", "Año"],
             var_name="Componente",
             value_name="Valor",
         )
-        tidy = tidy.drop_duplicates(subset=["Indicador", "Desagregacion", "Año", "Componente", "Valor"])
+        tidy = tidy.drop_duplicates(subset=["Indicador", "IndicadorSimplificado", "Desagregacion", "Año", "Componente", "Valor"])
         tidy_frames.append(tidy)
+
+    if not tidy_frames:
+        st.warning("⚠️ No se encontraron columnas de años (2024-2029). Revisa los encabezados del Excel.")
+        return pd.DataFrame()
 
     tidy_df = pd.concat(tidy_frames, ignore_index=True)
     tidy_df["Valor"] = pd.to_numeric(tidy_df["Valor"], errors="coerce")
     tidy_df = tidy_df.dropna(subset=["Valor"])
+    
     tidy_df = tidy_df.sort_values("Valor", ascending=False).drop_duplicates(
         subset=["Indicador", "Desagregacion", "Año", "Componente"],
         keep="first",
     )
+    
     tidy_df["Eje"] = tidy_df["Indicador"].str.extract(r"^(\d)").fillna("Otros")
     tidy_df["NombreEje"] = tidy_df["Eje"].map(lambda x: GROUPS.get(x, {}).get("title", "Otros"))
     tidy_df["Unidad"] = tidy_df["Indicador"].apply(lambda x: meta_for_indicator(x)["unidad"])
+    
     if "Comentario" not in tidy_df.columns:
         tidy_df["Comentario"] = ""
 
@@ -418,29 +459,77 @@ def color_rank(df: pd.DataFrame) -> pd.DataFrame:
 def render_level1(df: pd.DataFrame):
     st.markdown("### 📈 Resumen")
     
-    # 1. Filtros y KPIs (Igual que antes)
+    # 1. Selector de Año
     year_opts = sorted(df["Año"].unique())
-    # Lógica para preseleccionar 2025
     idx_2025 = year_opts.index(2025) if 2025 in year_opts else len(year_opts)-1
-    
     selected_year = st.selectbox("📅 Año Fiscal", year_opts, index=idx_2025)
+    
+    # Filtramos por el año seleccionado
     df_year = df[df["Año"] == selected_year].copy()
     
-    avg_score = df_year["score_normalizado"].mean()
-    c_kpi1, c_kpi2, c_kpi3, c_kpi4 = st.columns(4)
-    c_kpi1.metric("Indicadores", df_year["Indicador"].nunique(), delta=f"Año {selected_year}", delta_color="off")
-    c_kpi2.metric("Ejes", df_year["Eje"].nunique(), delta="Activos", delta_color="off")
-    c_kpi3.metric("Desempeño Global", f"{avg_score:.1f}%", delta="Promedio Score", delta_color="normal")
-    c_kpi4.metric("Última Act.", "Nov 2025", delta="Automático", delta_color="off")
-
-    # 2. Treemap (Igual que antes)
-    st.markdown(f"### 🏆 Performance por Eje ({selected_year})")
-    c1, c2 = st.columns([3, 1])
+    # --- CÁLCULO DE MÉTRICAS ESPECÍFICAS ---
+    # Nota: Filtramos por Desagregacion="Total" para evitar duplicar valores 
+    # si existen desgloses (ej. por género) en la base de datos.
     
-    with c1:
-        unique_inds = df_year["Indicador"].unique().tolist()
-        short_names_map = get_short_names(unique_inds) # Usamos la función de caché IA
-        df_year["Indicador_Corto"] = df_year["Indicador"].map(short_names_map).fillna(df_year["Indicador"])
+    # 1. Proyectos: Suma de Implementados (1.1.2) + Transformacionales (1.1.3)
+    kpi_proyectos = df_year[
+        (df_year["Indicador"].str.startswith(("1.1.2", "1.1.3"))) & 
+        (df_year["Desagregacion"] == "Total")
+    ]["Valor"].sum()
+    
+    # 2. Índice de Sostenibilidad Financiera (5.1.1)
+    kpi_sostenibilidad = df_year[
+        (df_year["Indicador"].str.startswith("5.1.1")) & 
+        (df_year["Desagregacion"] == "Total")
+    ]["Valor"].sum()
+    
+    # 3. Beneficiarios Directos (1.1.1)
+    kpi_beneficiarios = df_year[
+        (df_year["Indicador"].str.startswith("1.1.1")) & 
+        (df_year["Desagregacion"] == "Total")
+    ]["Valor"].sum()
+
+    # --- VISUALIZACIÓN DE TARJETAS (MÉTRICAS) ---
+    c_kpi1, c_kpi2, c_kpi3, c_kpi4 = st.columns(4)
+    
+    c_kpi1.metric(
+        "Año Escogido", 
+        f"{selected_year}", 
+        delta=None
+    )
+    c_kpi2.metric(
+        "Proyectos (Impl. + Transf.)", 
+        f"{kpi_proyectos:,.0f}", 
+        delta="Total Anual"
+    )
+    c_kpi3.metric(
+        "Índice Sostenibilidad Fin.", 
+        f"{kpi_sostenibilidad:.2f}", 
+        delta="Objetivo: >1" # Opcional, puedes quitar el delta
+    )
+    c_kpi4.metric(
+        "Beneficiarios Directos", 
+        f"{kpi_beneficiarios:,.0f}", 
+        delta="Personas"
+    )
+
+    st.markdown("---")
+
+    # 2. Treemap (Performance por Eje)
+    import textwrap # Importamos librería para ajustar texto
+
+    # 2. Treemap (Performance por Eje)
+    st.markdown(f"### 🏆 Performance por Eje ({selected_year})")
+
+    with st.container():
+        # Usamos la columna simplificada si existe, si no la normal
+        col_nombre = "IndicadorSimplificado" if "IndicadorSimplificado" in df_year.columns else "Indicador"
+        
+        # --- CAMBIO 1: Función para dividir texto en varias líneas ---
+        # width=15 significa que cortará aprox a los 15 caracteres (ajusta este número si quieres líneas más largas o cortas)
+        df_year["Indicador_Corto"] = df_year[col_nombre].apply(
+            lambda x: "<br>".join(textwrap.wrap(str(x), width=15))
+        )
         
         base_tree = (
             df_year.groupby(["Eje", "NombreEje", "Indicador", "Indicador_Corto", "Unidad"], as_index=False)
@@ -457,50 +546,66 @@ def render_level1(df: pd.DataFrame):
                 color_discrete_sequence=CATEGORICAL_PALETTE,
                 custom_data=["valor_total", "Unidad", "Indicador", "score_mean"]
             )
+            
+            # --- MEJORA VISUAL ---
             fig.update_traces(
-                texttemplate="<b>%{label}</b><br>%{customdata[0]:,.0f} %{customdata[1]}",
-                hovertemplate="<b>%{customdata[2]}</b><br>Valor: %{customdata[0]:,.0f} %{customdata[1]}<br>Score: %{customdata[3]:.1f}",
-                textinfo="label+text"
+                # --- CAMBIO 2: Agregamos line-height para que las líneas dobles se lean bien ---
+                texttemplate=(
+                    "<span style='font-size:18px; font-weight:bold; line-height:1.2'>%{label}</span><br><br>"
+                    "<span style='font-size:15px'>%{customdata[0]:,.0f} %{customdata[1]}</span>"
+                ),
+                # Tooltip con mejor formato y tamaño de letra
+                hovertemplate=(
+                    "<b style='font-size:16px'>%{customdata[2]}</b><br><br>"
+                    "<span style='font-size:14px'>Valor Real: <b>%{customdata[0]:,.0f} %{customdata[1]}</b></span><br>"
+                    "<span style='font-size:14px'>Score: <b>%{customdata[3]:.1f}/100</b></span>"
+                    "<extra></extra>" 
+                ),
+                textposition="middle center", 
+                textinfo="label+text",
+                marker=dict(
+                    line=dict(width=2, color='white'), 
+                    cornerradius=5 
+                )
             )
-            fig.update_layout(margin=dict(t=0, l=0, r=0, b=0), height=450)
+            
+            fig.update_layout(
+                margin=dict(t=10, l=0, r=0, b=0),
+                height=550, 
+                font=dict(family="Open Sans, sans-serif", size=14),
+                hoverlabel=dict(
+                    bgcolor="white",
+                    font_size=14,
+                    font_family="Open Sans, sans-serif"
+                )
+            )
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info(f"No hay datos para {selected_year}")
-    
-    with c2:
-        st.info("💡 **Guía:** El tamaño de la caja es el Score (cumplimiento). El número visible es el Valor de los Indicadores.")
 
-    # --- SECCIÓN MODIFICADA: TENDENCIAS TEMPORALES ---
+    # 3. Tendencias
     st.markdown("### ⏳ Tendencias")
     eje_opts_lvl1 = list(GROUPS.keys())
     eje_sel_lvl1 = st.selectbox("Seleccionar Eje", eje_opts_lvl1, format_func=lambda x: f"{x}. {GROUPS[x]['title']}")
     
-    # Filtramos la base para el gráfico de líneas
     evol_base = df[df["Eje"] == eje_sel_lvl1].copy()
     
-    # 1. Aplicamos nombres cortos también aquí para que el tooltip no sea gigante
-    # Nota: Usamos todos los indicadores del eje seleccionado, no solo los del año actual
-    all_inds_trend = evol_base["Indicador"].unique().tolist()
-    trend_short_map = get_short_names(all_inds_trend)
-    evol_base["Ind_Corto"] = evol_base["Indicador"].map(trend_short_map).fillna(evol_base["Indicador"])
+    col_nombre_tend = "IndicadorSimplificado" if "IndicadorSimplificado" in evol_base.columns else "Indicador"
+    evol_base["Ind_Corto"] = evol_base[col_nombre_tend]
 
-    # 2. Creamos una columna de texto formateado "Nombre: Valor"
-    # Ejemplo: "Proyectos Realizados: 15"
+    # Texto formateado para tooltip
     evol_base["Detalle_Texto"] = (
         "- " + evol_base["Ind_Corto"] + ": " + 
         evol_base["Valor"].apply(lambda x: f"{x:,.0f}")
     )
     
-    # 3. Agrupamos concatenando el texto
     chart_base = evol_base[evol_base["Componente"] != "Total"].groupby(["Año", "Componente"], as_index=False).agg({
         "score_normalizado": "mean",
         "Valor": "sum",
         "Unidad": "first",
-        # Aquí está la magia: unimos todas las filas de texto con un salto de línea
         "Detalle_Texto": lambda x: "\n".join(x) 
     })
     
-    # 4. Graficamos
     chart_evol = alt.Chart(chart_base).mark_line(point=True, strokeWidth=3).encode(
         x=alt.X("Año:O", title=""),
         y=alt.Y("score_normalizado:Q", title="Score"),
@@ -509,7 +614,6 @@ def render_level1(df: pd.DataFrame):
             alt.Tooltip("Año", title="Año Fiscal"),
             alt.Tooltip("Componente", title="Área"),
             alt.Tooltip("Valor", title="Total Absoluto", format=",.0f"),
-            # Mostramos la columna de texto concatenado
             alt.Tooltip("Detalle_Texto", title="Desglose de Indicadores")
         ]
     ).properties(height=350)
