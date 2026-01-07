@@ -76,14 +76,14 @@ SHEET_NAME = "Totales"
 LOGO_PATH = "https://plataforma.grupofaro.org/pluginfile.php/1/theme_moove/logo/1759441070/logoFARO.png"
 
 GROUPS = {
-    "1": {"title": "Impacto de proyectos", "desc": "Beneficiarios y proyectos"},
-    "2": {"title": "Alianzas y colaboración", "desc": "Articulación y redes"},
-    "3": {"title": "Evidencia e influencia", "desc": "Productos y políticas"},
-    "4": {"title": "Comunicación y reputación", "desc": "Posicionamiento y medios"},
-    "5": {"title": "Sostenibilidad financiera", "desc": "Ingresos y diversificación"},
-    "6": {"title": "Gestión y calidad", "desc": "Repositorio y aseguramiento"},
-    "7": {"title": "Transformación digital", "desc": "Satisfacción tecnológica"},
-    "8": {"title": "Talento y desarrollo", "desc": "Desempeño y capacitación"},
+    "1": {"title": "1. Implementar acciones para construir sociedades equitativas", "desc": "Beneficiarios y proyectos"},
+    "2": {"title": "2. Generar espacios de colaboración con actores (nacional e internacional)", "desc": "Articulación y redes"},
+    "3": {"title": "3. Fortalecer la incidencia en las acciones, decisiones y opinión públicas", "desc": "Productos y políticas"},
+    "4": {"title": "4. Posicionar nacional e internacionalmente a FARO", "desc": "Posicionamiento y medios"},
+    "5": {"title": "5. Sostenibilidad financiera", "desc": "Ingresos y diversificación"},
+    "6": {"title": "6. Optimizar los procesos de operación", "desc": "Repositorio y aseguramiento"},
+    "7": {"title": "7. Avanzar hacia la digitalización", "desc": "Satisfacción tecnológica"},
+    "8": {"title": "8. Atraer, fortalecer y contar con capital humano de calidad", "desc": "Desempeño y capacitación"},
 }
 
 INDICATOR_META = {
@@ -567,24 +567,46 @@ def render_level1(df: pd.DataFrame):
 
     st.markdown("---")
 
-    # 2. Treemap (Performance por Eje)
-    import textwrap # Importamos librería para ajustar texto
-
-    # 2. Treemap (Performance por Eje)
-    st.markdown(f"### 🏆 Performance por Eje ({selected_year})")
+    # --- 3. TREEMAP (CON FILTRO DE ÁREA ESPECÍFICO) ---
+    
+    # Columnas para título y filtro alineados
+    col_title, col_filter = st.columns([1, 2])
+    
+    with col_title:
+        st.markdown(f"### 🏆 Performance")
+    
+    with col_filter:
+        # Definimos las áreas disponibles en este año
+        areas_disponibles = sorted([x for x in df_year["Componente"].unique() if x != "Total"])
+        
+        # Multiselect exclusivo para el Treemap
+        selected_areas_tree = st.multiselect(
+            "Filtro de Área:",
+            options=areas_disponibles,
+            default=areas_disponibles, # Por defecto todas
+            placeholder="Selecciona áreas a visualizar..."
+        )
 
     with st.container():
-        # Usamos la columna simplificada si existe, si no la normal
-        col_nombre = "IndicadorSimplificado" if "IndicadorSimplificado" in df_year.columns else "Indicador"
+        # Lógica de filtrado SOLO para el gráfico
+        if selected_areas_tree:
+            df_tree_filtered = df_year[df_year["Componente"].isin(selected_areas_tree)].copy()
+        else:
+            df_tree_filtered = df_year.copy() # Si borra todo, mostramos todo por seguridad (o podrías mostrar vacío)
+
+        import textwrap
         
-        # --- CAMBIO 1: Función para dividir texto en varias líneas ---
-        # width=15 significa que cortará aprox a los 15 caracteres (ajusta este número si quieres líneas más largas o cortas)
-        df_year["Indicador_Corto"] = df_year[col_nombre].apply(
+        # Usamos la columna simplificada si existe
+        col_nombre = "IndicadorSimplificado" if "IndicadorSimplificado" in df_tree_filtered.columns else "Indicador"
+        
+        # Función wrap
+        df_tree_filtered["Indicador_Corto"] = df_tree_filtered[col_nombre].apply(
             lambda x: "<br>".join(textwrap.wrap(str(x), width=15))
         )
         
+        # Agrupación
         base_tree = (
-            df_year.groupby(["Eje", "NombreEje", "Indicador", "Indicador_Corto", "Unidad"], as_index=False)
+            df_tree_filtered.groupby(["Eje", "NombreEje", "Indicador", "Indicador_Corto", "Unidad"], as_index=False)
             .agg(score_mean=("score_normalizado", "mean"), valor_total=("Valor", "sum"))
         )
         base_tree = color_rank(base_tree)
@@ -599,14 +621,12 @@ def render_level1(df: pd.DataFrame):
                 custom_data=["valor_total", "Unidad", "Indicador", "score_mean"]
             )
             
-            # --- MEJORA VISUAL ---
             fig.update_traces(
-                # --- CAMBIO 2: Agregamos line-height para que las líneas dobles se lean bien ---
+                root_color="lightgrey", # Botón "Atrás" visual
                 texttemplate=(
                     "<span style='font-size:18px; font-weight:bold; line-height:1.2'>%{label}</span><br><br>"
                     "<span style='font-size:15px'>%{customdata[0]:,.0f} %{customdata[1]}</span>"
                 ),
-                # Tooltip con mejor formato y tamaño de letra
                 hovertemplate=(
                     "<b style='font-size:16px'>%{customdata[2]}</b><br><br>"
                     "<span style='font-size:14px'>Valor Real: <b>%{customdata[0]:,.0f} %{customdata[1]}</b></span><br>"
@@ -622,7 +642,7 @@ def render_level1(df: pd.DataFrame):
             )
             
             fig.update_layout(
-                margin=dict(t=10, l=0, r=0, b=0),
+                margin=dict(t=50, l=0, r=0, b=0), # Margen para la barra de navegación
                 height=550, 
                 font=dict(family="Open Sans, sans-serif", size=14),
                 hoverlabel=dict(
@@ -633,7 +653,7 @@ def render_level1(df: pd.DataFrame):
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info(f"No hay datos para {selected_year}")
+            st.info(f"No hay datos para las áreas seleccionadas en {selected_year}")
 
     # 3. Tendencias
     st.markdown("### ⏳ Tendencias")
