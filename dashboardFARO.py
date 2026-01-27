@@ -35,15 +35,6 @@ def get_short_names(unique_indicators: list) -> dict:
     except Exception as e:
         return cleaned_map
 
-# --- CONSTANTES Y RUTAS ---
-
-#DATA_PATH = '/Users/jonathanguallasamin/Downloads/Dashboard_Faro-main/Base de datos.xlsx'
-#DETAILED_DATA_PATH = "/Users/jonathanguallasamin/Downloads/IndicadoresDetalle_Faro.xlsx"
-DETAILED_DATA_PATH = "https://github.com/Guallasamin/Dashboard_Faro/raw/main/IndicadoresDetalle_Faro.xlsx"
-DATA_PATH = "https://github.com/Guallasamin/Dashboard_Faro/raw/main/Base%20de%20datos.xlsx"
-SHEET_NAME = "Totales"
-LOGO_PATH = "https://plataforma.grupofaro.org/pluginfile.php/1/theme_moove/logo/1759441070/logoFARO.png"
-
 @st.cache_data(show_spinner=False)
 def load_detailed_data(path: str) -> pd.DataFrame:
     """
@@ -52,9 +43,10 @@ def load_detailed_data(path: str) -> pd.DataFrame:
     2. Extrae el año y limpia el nombre del proyecto.    """
     sheets = ["IE", "EDU", "DSC", "ATDCA", "DAF", "COM"]
     
+    # Diccionario para corregir diferencias entre el nombre de la hoja y el nombre en 'Base de datos.xlsx'
     area_mapping = {
-        "ADTCA": "ATDCA", 
-        "DSC": "DCS"      
+        "ADTCA": "ATDCA", # Corrección de typo frecuente
+        "DSC": "DCS"      # Corrección de typo frecuente
     }
 
     all_projects = []
@@ -73,6 +65,7 @@ def load_detailed_data(path: str) -> pd.DataFrame:
         if "Indicador" not in df.columns:
             continue
         
+        # Rellenar indicadores
         df["Indicador"] = df["Indicador"].ffill().astype(str).str.strip()
         
         # Identificar dinámicamente las columnas de proyectos que tienen AÑO
@@ -556,7 +549,7 @@ def render_level1(df: pd.DataFrame):
     # 1. Selector de Año
     year_opts = sorted(df["Año"].unique())
     idx_2025 = year_opts.index(2025) if 2025 in year_opts else len(year_opts)-1
-    selected_year = st.selectbox("📅 Año", year_opts, index=idx_2025)
+    selected_year = st.selectbox("📅 Año Fiscal", year_opts, index=idx_2025)
     
     # Filtramos por el año seleccionado
     df_year = df[df["Año"] == selected_year].copy()
@@ -592,7 +585,7 @@ def render_level1(df: pd.DataFrame):
         delta=None
     )
     c_kpi2.metric(
-        "Proyectos", 
+        "Proyectos (Impl. + Transf.)", 
         f"{kpi_proyectos:,.0f}", 
         delta="Total Anual"
     )
@@ -613,7 +606,7 @@ def render_level1(df: pd.DataFrame):
     
     col_title, col_filter = st.columns([1, 2])
     with col_title:
-        st.markdown(f"### 🏆 Indicadores")
+        st.markdown(f"### 🏆 Performance (Detallado)")
     
     with col_filter:
         areas_disponibles = sorted([x for x in df_year["Componente"].unique() if x != "Total"])
@@ -756,10 +749,10 @@ def render_level1(df: pd.DataFrame):
                     # Título: Nombre del Proyecto (o del Indicador si es DAF/COM)
                     "<b>%{label}</b><br><br>"
                     
-                    # Línea 1: Nombre del Indicador
+                    # Línea 1: Nombre del Indicador Padre
                     "📌 <b>Indicador:</b> %{customdata[2]}<br>"
                     
-                    # Línea 2: Valor específico del proyecto
+                    # Línea 2: Valor específico del proyecto (o total si es indicador)
                     "📊 <b>Valor:</b> %{customdata[0]:,.0f} %{customdata[1]}"
                     
                     # <extra></extra> oculta el cuadro secundario que dice el nombre del Eje
@@ -783,7 +776,7 @@ def render_level2(df: pd.DataFrame):
         c_filt1, c_filt2, c_filt3 = st.columns([2, 1, 1])
         with c_filt1:
             l2_eje_opts = ["Todos"] + list(GROUPS.keys())
-            l2_eje = st.selectbox("Indicador", l2_eje_opts, format_func=lambda x: "Todos los Indicadores" if x == "Todos" else f"{x}. {GROUPS[x]['title']}")
+            l2_eje = st.selectbox("Eje Estratégico", l2_eje_opts, format_func=lambda x: "Todos los Ejes" if x == "Todos" else f"{x}. {GROUPS[x]['title']}")
         with c_filt2:
             l2_opts = sorted(df["Año"].unique(), reverse=True)
             # Lógica para preseleccionar 2025
@@ -827,7 +820,7 @@ def render_level2(df: pd.DataFrame):
     # ==========================================
     # USA: l2_base_heatmap (Sin filtros de eje/indicador)
     
-    st.subheader("🔥 Intensidad por Indicador y Área")
+    st.subheader("🔥 Intensidad por Eje y Área")
 
     base_heat = (
         l2_base_heatmap[(l2_base_heatmap["Componente"] != "Total")]
