@@ -5,8 +5,10 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-import re
+import re # Asegúrate de tener esto al inicio del script
 
+
+# Configuración de página PRIMERO
 st.set_page_config(
     page_title="Herramienta de Seguimiento FARO", 
     layout="wide", 
@@ -23,16 +25,30 @@ except ImportError:
 @st.cache_data(show_spinner=False)
 def get_short_names(unique_indicators: list) -> dict:
     """
-    Usa IA para acortar nombres de indicadores. 
-    Si falla o no hay API Key, usa una limpieza simple por Regex.
+    Acorta nombres de indicadores usando limpieza simple por Regex (Sin IA).
     """
     cleaned_map = {}
     import re
     for ind in unique_indicators:
+        # 1. Quita la numeración del inicio (ej: "1.1.1 ", "2.1 ")
         simple = re.sub(r'^\d+(\.\d+)*\s*', '', ind)
-        short = " ".join(simple.split()[:5])
+        
+        # 2. Opcional: Toma las primeras N palabras si es muy largo
+        # Ajusta el [:10] si quieres más o menos palabras
+        short = " ".join(simple.split()[:10]) 
+        
         cleaned_map[ind] = short
-        return cleaned_map
+
+    return cleaned_map
+
+# --- CONSTANTES Y RUTAS ---
+# CAMBIO: Usamos la url raw para que pandas descargue el binario directamente
+DATA_PATH = "https://github.com/Guallasamin/Dashboard_Faro/raw/main/Base%20de%20datos.xlsx"
+DETAILED_DATA_PATH = "https://github.com/Guallasamin/Dashboard_Faro/raw/main/IndicadoresDetalle_Faro.xlsx"
+#DATA_PATH = '/Users/jonathanguallasamin/Downloads/Dashboard_Faro-main/Base de datos.xlsx'
+#DETAILED_DATA_PATH = "/Users/jonathanguallasamin/Downloads/IndicadoresDetalle_Faro.xlsx"
+SHEET_NAME = "Totales"
+LOGO_PATH = "https://plataforma.grupofaro.org/pluginfile.php/1/theme_moove/logo/1759441070/logoFARO.png"
 
 @st.cache_data(show_spinner=False)
 def load_detailed_data(path: str) -> pd.DataFrame:
