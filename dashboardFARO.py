@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-import re # Asegúrate de tener esto al inicio del script
+import re
 
 
 # Configuración de página PRIMERO
@@ -42,11 +42,8 @@ def get_short_names(unique_indicators: list) -> dict:
     return cleaned_map
 
 # --- CONSTANTES Y RUTAS ---
-# CAMBIO: Usamos la url raw para que pandas descargue el binario directamente
-DATA_PATH = "https://github.com/Guallasamin/Dashboard_Faro/raw/main/Base%20de%20datos.xlsx"
-DETAILED_DATA_PATH = "https://github.com/Guallasamin/Dashboard_Faro/raw/main/IndicadoresDetalle_Faro.xlsx"
-#DATA_PATH = '/Users/jonathanguallasamin/Downloads/Dashboard_Faro-main/Base de datos.xlsx'
-#DETAILED_DATA_PATH = "/Users/jonathanguallasamin/Downloads/IndicadoresDetalle_Faro.xlsx"
+DATA_PATH = "https://github.com/investigacion-FARO/DashboardFaro/blob/main/BasesDatos/1.BaseIncadoresAgregados.xlsx"
+DETAILED_DATA_PATH = "https://github.com/investigacion-FARO/DashboardFaro/blob/main/BasesDatos/2.BaseIncadoresDetalle.xlsx"
 SHEET_NAME = "Totales"
 LOGO_PATH = "https://plataforma.grupofaro.org/pluginfile.php/1/theme_moove/logo/1759441070/logoFARO.png"
 
