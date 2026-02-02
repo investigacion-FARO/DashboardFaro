@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 import re
+import io
 
 
 # Configuración de página PRIMERO
@@ -46,6 +47,61 @@ DATA_PATH = "https://github.com/investigacion-FARO/DashboardFaro/raw/main/BasesD
 DETAILED_DATA_PATH = "https://github.com/investigacion-FARO/DashboardFaro/raw/main/BasesDatos/2.BaseIncadoresDetalle.xlsx"
 SHEET_NAME = "Totales"
 LOGO_PATH = "https://plataforma.grupofaro.org/pluginfile.php/1/theme_moove/logo/1759441070/logoFARO.png"
+
+@st.cache_data(show_spinner=False)
+def to_excel(df: pd.DataFrame):
+    """
+    Convierte un DataFrame a un archivo Excel en memoria con formato bonito.
+    """
+    output = io.BytesIO()
+    # Usamos 'xlsxwriter' como motor para poder aplicar estilos
+    # Nota: Asegúrate de que 'xlsxwriter' esté instalado en tu entorno (pip install xlsxwriter)
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Reporte')
+        workbook = writer.book
+        worksheet = writer.sheets['Reporte']
+        
+        # --- DEFINICIÓN DE FORMATOS ---
+        # 1. Formato para encabezados (Azul oscuro, texto blanco, negrita)
+        header_fmt = workbook.add_format({
+            'bold': True,
+            'fg_color': '#2F6EAC', # Color Dark Blue de tu paleta
+            'font_color': '#FFFFFF',
+            'border': 1,
+            'text_wrap': True,
+            'valign': 'vcenter',
+            'align': 'center'
+        })
+        
+        # 2. Formato para el cuerpo (Bordes, alineación superior, ajuste de texto)
+        body_fmt = workbook.add_format({
+            'border': 1,
+            'text_wrap': True,
+            'valign': 'top'
+        })
+        
+        # 3. Formato para números (Opcional, si quisieras decimales específicos)
+        # num_fmt = workbook.add_format({'border': 1, 'num_format': '#,##0'})
+
+        # --- APLICAR FORMATOS ---
+        
+        # Escribir los encabezados con el formato bonito
+        for col_num, value in enumerate(df.columns.values):
+            worksheet.write(0, col_num, value, header_fmt)
+            
+        # Ajustar anchos de columna y aplicar formato al cuerpo
+        # A (0): Indicador (Ancho 60)
+        worksheet.set_column('A:A', 60, body_fmt)
+        # B (1): Área (Ancho 15)
+        worksheet.set_column('B:B', 15, body_fmt)
+        # C (2): Resultado (Ancho 15)
+        worksheet.set_column('C:C', 15, body_fmt)
+        # D (3): Unidad (Ancho 15)
+        worksheet.set_column('D:D', 15, body_fmt)
+        # E (4): Desempeño (Ancho 15)
+        worksheet.set_column('E:E', 15, body_fmt)
+
+    return output.getvalue()
 
 @st.cache_data(show_spinner=False)
 def load_detailed_data(path: str) -> pd.DataFrame:
@@ -930,9 +986,7 @@ def render_level3(df: pd.DataFrame):
         c1, c2, c3 = st.columns(3)
         with c1:
             year_opts = sorted(df["Año"].unique())
-            # Lógica para preseleccionar 2025
             idx_2025 = year_opts.index(2025) if 2025 in year_opts else len(year_opts)-1
-            
             d_year = st.selectbox("Año Fiscal", year_opts, index=idx_2025)
         with c2:
             d_areas_opts = sorted(df["Componente"].unique())
@@ -945,7 +999,7 @@ def render_level3(df: pd.DataFrame):
     if d_area: detail = detail[detail["Componente"].isin(d_area)]
     if d_eje: detail = detail[detail["Eje"].isin(d_eje)]
     
-    # Limpieza de duplicados lógicos para tabla
+    # Limpieza de duplicados
     if detail["Indicador"].str.startswith("1.1.1").any():
         detail = detail[(~detail["Indicador"].str.startswith("1.1.1")) | (detail["Desagregacion"] == "Total")]
 
@@ -954,14 +1008,14 @@ def render_level3(df: pd.DataFrame):
         return
 
     # Preparar tabla final
-    display_df = detail[["Indicador", "Componente", "Unidad", "Valor", "score_normalizado"]].copy()
+    display_df = detail[["Indicador", "Componente", "Valor", "Unidad", "score_normalizado"]].copy()
     display_df = display_df.rename(columns={
         "Componente": "Área", 
         "score_normalizado": "Desempeño (%)", 
         "Valor": "Resultado"
     })
     
-    # Agregamos una columna de estado visual (opcional)
+    # Reordenar columnas para que coincidan con el Excel
     display_df = display_df[["Indicador", "Área", "Resultado", "Unidad", "Desempeño (%)"]]
 
     st.markdown("#### Tabla de Resultados")
@@ -983,13 +1037,16 @@ def render_level3(df: pd.DataFrame):
         }
     )
     
+    # --- AQUÍ ESTÁ EL CAMBIO PARA DESCARGAR EXCEL ---
+    excel_data = to_excel(display_df)
+    
     st.download_button(
-        label="📥 Descargar Datos filtrados (CSV)",
-        data=display_df.to_csv(index=False),
-        file_name=f"reporte_faro_{d_year}.csv",
-        mime="text/csv"
+        label="📥 Descargar Reporte Excel (.xlsx)",
+        data=excel_data,
+        file_name=f"reporte_faro_{d_year}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
+    
 # --- RENDERIZADO FINAL ---
 if page == "Nivel 1 – Resumen":
     render_level1(filtered)
