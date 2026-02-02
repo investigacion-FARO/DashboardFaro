@@ -42,8 +42,8 @@ def get_short_names(unique_indicators: list) -> dict:
     return cleaned_map
 
 # --- CONSTANTES Y RUTAS ---
-DATA_PATH = "https://github.com/investigacion-FARO/DashboardFaro/blob/main/BasesDatos/1.BaseIncadoresAgregados.xlsx"
-DETAILED_DATA_PATH = "https://github.com/investigacion-FARO/DashboardFaro/blob/main/BasesDatos/2.BaseIncadoresDetalle.xlsx"
+DATA_PATH = "https://github.com/investigacion-FARO/DashboardFaro/raw/main/BasesDatos/1.BaseIncadoresAgregados.xlsx"
+DETAILED_DATA_PATH = "https://github.com/investigacion-FARO/DashboardFaro/raw/main/BasesDatos/2.BaseIncadoresDetalle.xlsx"
 SHEET_NAME = "Totales"
 LOGO_PATH = "https://plataforma.grupofaro.org/pluginfile.php/1/theme_moove/logo/1759441070/logoFARO.png"
 
